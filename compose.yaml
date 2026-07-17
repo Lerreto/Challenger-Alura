@@ -1,0 +1,21 @@
+name: nebula-tech-rag
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - type: bind
+        source: ./documents
+        target: /app/documents
+        read_only: true
