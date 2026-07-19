@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nebula-rag"
+version = "0.1.0"
+description = "Grounded document assistant for the Alura challenge"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+  "beautifulsoup4>=4.13,<5",
+  "fastapi>=0.116,<1",
+  "langchain>=1.0,<2",
+  "langchain-chroma>=1.0,<2",
+  "langchain-groq>=1.0,<2",
+  "langchain-huggingface>=1.0,<2",
+  "langchain-text-splitters>=1.0,<2",
+  "openpyxl>=3.1,<4",
+  "pydantic-settings>=2.10,<3",
+  "pypdf>=6,<7",
+  "python-docx>=1.2,<2",
+  "python-multipart>=0.0.20,<1",
+  "python-pptx>=1.0,<2",
+  "pyyaml>=6,<7",
+  "sentence-transformers>=5,<6",
+  "torch>=2,<3",
+  "uvicorn[standard]>=0.35,<1",
+]
+
+[project.optional-dependencies]
+test = [
+  "httpx>=0.28,<1",
+  "pytest>=8.4,<9",
+  "pytest-cov>=6.2,<7",
+]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nebula_rag"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["nebula_rag"]
+branch = true
+

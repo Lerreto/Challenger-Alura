@@ -11,3 +11,6 @@ dist/
 build/
 coverage/
 *.log
+.coverage
+htmlcov/
+tests/

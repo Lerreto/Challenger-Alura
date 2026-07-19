@@ -7,3 +7,6 @@ dist/
 build/
 coverage/
 *.log
+*.tsbuildinfo
+src/**/*.test.*
+src/test/

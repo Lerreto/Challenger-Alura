@@ -5,16 +5,15 @@
 !.env.example
 .codex
 .agents
-Docs
 
 # Local agent instructions
 AGENTS.md
 CLAUDE.md
 
 # Course material is local-only; the project plan remains versioned.
-Docs/*
-!Docs/plan/
-!Docs/plan/**
+/Docs/*
+!/Docs/plan/
+!/Docs/plan/**
 
 # Common generated files
 __pycache__/
@@ -26,3 +25,7 @@ node_modules/
 dist/
 build/
 coverage/
+.coverage
+htmlcov/
+*.tsbuildinfo
+/backend/storage/

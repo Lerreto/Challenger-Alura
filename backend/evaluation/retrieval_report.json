@@ -1,0 +1,133 @@
+{
+  "embedding_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "documents_dir": "../documents",
+  "corpus_chunks": 63,
+  "questions": 24,
+  "recommended_threshold": 0.331117,
+  "balanced_accuracy": 0.958333,
+  "separation_margin": -0.134571,
+  "min_in_domain_score": 0.373463,
+  "max_out_of_domain_score": 0.508034,
+  "results": [
+    {
+      "question": "¿Cuántos días tengo para solicitar una devolución?",
+      "in_domain": true,
+      "score": 0.700799
+    },
+    {
+      "question": "¿Cuánto tarda en procesarse un reembolso?",
+      "in_domain": true,
+      "score": 0.783007
+    },
+    {
+      "question": "¿Qué productos no se pueden devolver?",
+      "in_domain": true,
+      "score": 0.540475
+    },
+    {
+      "question": "¿Cómo se protege mi información personal?",
+      "in_domain": true,
+      "score": 0.633169
+    },
+    {
+      "question": "¿Puedo pedir que eliminen mis datos?",
+      "in_domain": true,
+      "score": 0.55759
+    },
+    {
+      "question": "¿Cuáles son los tiempos de entrega?",
+      "in_domain": true,
+      "score": 0.629418
+    },
+    {
+      "question": "¿Cómo puedo rastrear mi pedido?",
+      "in_domain": true,
+      "score": 0.590257
+    },
+    {
+      "question": "¿Qué sucede si mi paquete llega dañado?",
+      "in_domain": true,
+      "score": 0.404845
+    },
+    {
+      "question": "¿Qué medios de pago acepta la tienda?",
+      "in_domain": true,
+      "score": 0.544539
+    },
+    {
+      "question": "¿La empresa ofrece garantía para sus productos?",
+      "in_domain": true,
+      "score": 0.527684
+    },
+    {
+      "question": "¿Cómo contacto al equipo de soporte?",
+      "in_domain": true,
+      "score": 0.373463
+    },
+    {
+      "question": "¿Qué condiciones debo aceptar al comprar?",
+      "in_domain": true,
+      "score": 0.460382
+    },
+    {
+      "question": "¿Quién ganó el último mundial de fútbol?",
+      "in_domain": false,
+      "score": 0.140437
+    },
+    {
+      "question": "¿Cuál será el clima mañana en Bogotá?",
+      "in_domain": false,
+      "score": 0.508034
+    },
+    {
+      "question": "Explicame cómo resolver una ecuación cuadrática",
+      "in_domain": false,
+      "score": 0.186126
+    },
+    {
+      "question": "Escribí un poema sobre las estrellas",
+      "in_domain": false,
+      "score": 0.047018
+    },
+    {
+      "question": "¿Cuál es la capital de Mongolia?",
+      "in_domain": false,
+      "score": 0.193137
+    },
+    {
+      "question": "Dame una receta de lasaña vegetariana",
+      "in_domain": false,
+      "score": 0.090061
+    },
+    {
+      "question": "¿Cómo instalo Linux en una computadora?",
+      "in_domain": false,
+      "score": 0.186487
+    },
+    {
+      "question": "¿Qué acciones conviene comprar esta semana?",
+      "in_domain": false,
+      "score": 0.216865
+    },
+    {
+      "question": "Contame la historia del Imperio romano",
+      "in_domain": false,
+      "score": 0.209451
+    },
+    {
+      "question": "¿Cuántas lunas tiene Saturno?",
+      "in_domain": false,
+      "score": 0.205113
+    },
+    {
+      "question": "Traducí buenos días al japonés",
+      "in_domain": false,
+      "score": 0.28877
+    },
+    {
+      "question": "¿Cómo preparo café con una prensa francesa?",
+      "in_domain": false,
+      "score": 0.244789
+    }
+  ]
+}

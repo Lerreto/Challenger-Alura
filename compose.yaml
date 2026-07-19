@@ -1,21 +1,41 @@
 name: nebula-tech-rag
 
 services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      NEBULA_DOCUMENTS_DIR: /app/storage/documents
+      NEBULA_DATA_DIR: /app/storage/data
+      NEBULA_SEED_DIR: /app/seed-documents
+      NEBULA_GROQ_MODEL: ${NEBULA_GROQ_MODEL:-llama-3.1-8b-instant}
+      NEBULA_EMBEDDING_MODEL: ${NEBULA_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+      NEBULA_EMBEDDING_DEVICE: ${NEBULA_EMBEDDING_DEVICE:-cpu}
+      NEBULA_MIN_RELEVANCE: ${NEBULA_MIN_RELEVANCE:-0.36}
+      NEBULA_MAX_UPLOAD_BYTES: ${NEBULA_MAX_UPLOAD_BYTES:-20971520}
+      HF_HOME: /home/app/.cache/huggingface
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - document_originals:/app/storage/documents
+      - vector_catalog:/app/storage/data
+      - huggingface_cache:/home/app/.cache/huggingface
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    depends_on:
+      backend:
+        condition: service_healthy
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:8080"
+    restart: unless-stopped
 
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    volumes:
-      - type: bind
-        source: ./documents
-        target: /app/documents
-        read_only: true
+volumes:
+  document_originals:
+  vector_catalog:
+  huggingface_cache:
