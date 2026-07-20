@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Literal
@@ -27,6 +27,7 @@ from .errors import (
 from .ingestion import IngestionService
 from .providers import create_llm_provider
 from .rag import RagService
+from .reranker import CrossEncoderReranker
 from .smalltalk import chat_meta_response, smalltalk_response
 from .vector_store import ChromaVectorIndex
 
@@ -145,6 +146,13 @@ class ReindexResponse(BaseModel):
     documents: int
 
 
+class SyncSeedResponse(BaseModel):
+    created: int
+    updated: int
+    unchanged: int
+    failed: int
+
+
 @dataclass
 class AppContainer:
     settings: Settings
@@ -164,12 +172,18 @@ def build_container(settings: Settings | None = None) -> AppContainer:
     vector_index = ChromaVectorIndex(settings)
     provider = create_llm_provider(settings)
     ingestion = IngestionService(settings, catalog, vector_index)
+    reranker = (
+        CrossEncoderReranker(settings.reranker_model, settings.reranker_device)
+        if settings.enable_reranker
+        else None
+    )
     rag = RagService(
         vector_index,
         provider,
         settings.min_relevance,
         settings.retrieval_candidates,
         settings.answer_sources,
+        reranker,
     )
     return AppContainer(settings, ingestion, rag, catalog, provider.is_configured())
 
@@ -229,6 +243,18 @@ async def _run_index_mutation(container: AppContainer, function, *args):
         return result
 
 
+async def _auto_sync_loop(container: AppContainer, interval_seconds: float) -> None:
+    """Background maintenance: periodically pick up new or changed files from
+    the seed directory without requiring a manual reindex. One failed tick
+    (e.g. a transient I/O error) must never stop future ticks from running."""
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            await _run_index_mutation(container, container.ingestion.sync_seed_directory)
+        except Exception:
+            continue
+
+
 def create_app(container: AppContainer | None = None) -> FastAPI:
     container = container or build_container()
 
@@ -247,7 +273,24 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
                 generation = container.readiness_generation + 1
                 container.readiness_generation = generation
                 container.initialization_error = str(exc)
-        yield
+        warm = getattr(container.rag.reranker, "warm", None)
+        if warm is not None:
+            # Best-effort: pay the one-time model download/load cost at
+            # startup, not on the first real user question.
+            with suppress(Exception):
+                await run_in_threadpool(warm)
+        sync_task: asyncio.Task | None = None
+        if container.settings.auto_sync_interval_seconds > 0:
+            sync_task = asyncio.create_task(
+                _auto_sync_loop(container, container.settings.auto_sync_interval_seconds)
+            )
+        try:
+            yield
+        finally:
+            if sync_task is not None:
+                sync_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await sync_task
 
     app = FastAPI(
         title="Nébula RAG API",
@@ -357,6 +400,16 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
                 status_code=422,
                 detail=_detail(code, "No fue posible reconstruir el índice."),
             ) from exc
+
+    @app.post("/api/documents/sync-seed", response_model=SyncSeedResponse)
+    async def sync_seed_documents() -> SyncSeedResponse:
+        """Manual trigger for the same reconciliation the background task runs
+        on a schedule — also usable by an external cron/scheduler (e.g. an
+        OCI scheduled job) when the internal interval is disabled."""
+        counts = await _run_index_mutation(
+            container, container.ingestion.sync_seed_directory
+        )
+        return SyncSeedResponse(**counts)
 
     @app.post("/api/chat", response_model=ChatResponse)
     def chat(request: ChatRequest) -> ChatResponse:

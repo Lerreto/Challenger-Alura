@@ -69,29 +69,13 @@ def test_provider_uses_separate_instruction_question_and_untrusted_context_messa
     assert "datos no confiables" in str(client.messages[2].content).lower()
 
 
-def test_recent_exchange_is_sent_as_a_non_citable_extra_message() -> None:
-    class StructuredClient:
-        def __init__(self) -> None:
-            self.messages = []
+def test_generate_never_accepts_conversation_history_as_a_message() -> None:
+    # A prior chat turn must never reach the LLM as generation context: a
+    # small model given "don't cite this, only use it to resolve references"
+    # will still echo unverified facts from it into the answer. The fix is
+    # structural — GroqProvider.generate only takes (question, context).
+    import inspect
 
-        def with_structured_output(self, schema, **kwargs):
-            return self
-
-        def invoke(self, messages):
-            self.messages = messages
-            return {"answer": "Respuesta", "cited_chunk_ids": ["c1"]}
-
-    client = StructuredClient()
-    provider = GroqProvider(Settings(groq_api_key="test-key"))
-    provider._client = client
-    provider.generate(
-        "dame la informacion dentro de ese .md",
-        "[chunk_id=c1]\nContenido",
-        recent_exchange=("dame los terminos y condiciones", "Términos y condiciones"),
-    )
-
-    assert len(client.messages) == 4
-    fourth = str(client.messages[3].content).lower()
-    assert "no es evidencia" in fourth
-    assert "dame los terminos y condiciones" in fourth
+    signature = inspect.signature(GroqProvider.generate)
+    assert list(signature.parameters) == ["self", "question", "context"]
 

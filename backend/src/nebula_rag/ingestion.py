@@ -20,6 +20,7 @@ from .errors import (
     DocumentNotFoundError,
     DocumentProcessingError,
     DocumentValidationError,
+    NebulaError,
 )
 from .loaders import SUPPORTED_EXTENSIONS, extract_sections, read_frontmatter
 
@@ -288,6 +289,48 @@ class IngestionService:
             except DocumentConflictError:
                 continue
         return created
+
+    def sync_seed_directory(self) -> dict[str, int]:
+        """Reconcile the mounted seed directory with the catalog: pick up new
+        files automatically and replace a document whose on-disk content
+        changed under the same filename. Meant to run on a schedule so the
+        agent stays current without a manual reindex.
+
+        Deletions stay a deliberate, audited action via the delete endpoint —
+        a background scan never removes a document just because its seed
+        file disappeared. Every file is handled independently, so one
+        unparseable "update" can never destroy a document that was working.
+        """
+        counts = {"created": 0, "updated": 0, "unchanged": 0, "failed": 0}
+        with self._mutation_lock:
+            if not self.settings.seed_dir.exists():
+                return counts
+            for source in sorted(self.settings.seed_dir.iterdir()):
+                if not source.is_file() or source.suffix.lower() not in SUPPORTED_EXTENSIONS:
+                    continue
+                content = source.read_bytes()
+                digest = sha256_bytes(content)
+                existing = self.catalog.find_by_original_filename(source.name)
+                if existing is not None and existing.sha256 == digest:
+                    counts["unchanged"] += 1
+                    continue
+                try:
+                    # Commit the new version first; only a successful ingest
+                    # retires the old record, so a bad replacement never
+                    # leaves the document catalog worse off than before.
+                    self.ingest_bytes(source.name, content)
+                except DocumentConflictError:
+                    counts["unchanged"] += 1
+                    continue
+                except NebulaError:
+                    counts["failed"] += 1
+                    continue
+                if existing is not None:
+                    self.delete(existing.id)
+                    counts["updated"] += 1
+                else:
+                    counts["created"] += 1
+        return counts
 
     def delete(self, document_id: str) -> None:
         with self._mutation_lock:

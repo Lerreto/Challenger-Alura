@@ -104,6 +104,66 @@ def test_seed_copies_only_missing_files(service: IngestionService) -> None:
     assert len(service.list_documents()) == 1
 
 
+def test_sync_seed_directory_creates_updates_and_leaves_unchanged_alone(
+    service: IngestionService,
+) -> None:
+    seed_a = service.settings.seed_dir / "a.md"
+    seed_a.write_text("# A\nVersion inicial de A.", encoding="utf-8")
+    seed_b = service.settings.seed_dir / "b.md"
+    seed_b.write_text("# B\nContenido de B.", encoding="utf-8")
+
+    counts = service.sync_seed_directory()
+    assert counts == {"created": 2, "updated": 0, "unchanged": 0, "failed": 0}
+    assert {record.original_filename for record in service.list_documents()} == {
+        "a.md",
+        "b.md",
+    }
+    original_a_id = service.catalog.find_by_original_filename("a.md").id
+
+    # A second pass over unchanged files must not re-ingest anything.
+    counts = service.sync_seed_directory()
+    assert counts == {"created": 0, "updated": 0, "unchanged": 2, "failed": 0}
+
+    # Editing a.md on disk under the same filename is a content update.
+    seed_a.write_text("# A\nVersion actualizada de A con mas contenido.", encoding="utf-8")
+    counts = service.sync_seed_directory()
+    assert counts == {"created": 0, "updated": 1, "unchanged": 1, "failed": 0}
+
+    updated_a = service.catalog.find_by_original_filename("a.md")
+    assert updated_a is not None
+    assert updated_a.id != original_a_id
+    assert "actualizada" in (
+        (service.settings.documents_dir / updated_a.stored_filename).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert service.catalog.get(original_a_id) is None  # old version retired
+    assert {record.original_filename for record in service.list_documents()} == {
+        "a.md",
+        "b.md",
+    }
+
+
+def test_sync_seed_directory_never_destroys_a_working_document_on_a_bad_update(
+    service: IngestionService,
+) -> None:
+    seed = service.settings.seed_dir / "policy.md"
+    seed.write_text("# Politica\nContenido valido.", encoding="utf-8")
+    service.sync_seed_directory()
+    working = service.catalog.find_by_original_filename("policy.md")
+    assert working is not None
+
+    # A subsequent on-disk edit that fails validation must not remove the
+    # previously-working document; the sync only reports a failed count.
+    seed.write_bytes(b"\xff\xfe")  # invalid encoding, same original filename
+    counts = service.sync_seed_directory()
+    assert counts == {"created": 0, "updated": 0, "unchanged": 0, "failed": 1}
+
+    still_there = service.catalog.find_by_original_filename("policy.md")
+    assert still_there is not None
+    assert still_there.id == working.id
+
+
 def test_initial_corpus_indexes_all_five_markdown_documents(tmp_path: Path) -> None:
     settings = Settings(
         documents_dir=tmp_path / "documents",

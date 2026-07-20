@@ -55,3 +55,9 @@ export const ChevronIcon = (props: IconProps) => (
 export const WarningIcon = (props: IconProps) => (
   <Icon {...props}><path d="M10.3 3.7 2.6 17a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 3.7a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4m0 3h.01" /></Icon>
 )
+export const ThumbsUpIcon = (props: IconProps) => (
+  <Icon {...props}><path d="M7 22V11m0 11H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h3m0 11 4.4 1.47a3 3 0 0 0 .95.16h6.13a2 2 0 0 0 2-1.68l1.13-6.78A2 2 0 0 0 19.61 11H14V6a2 2 0 0 0-2-2h-.34a1 1 0 0 0-.95.68L9 11" /></Icon>
+)
+export const ThumbsDownIcon = (props: IconProps) => (
+  <Icon {...props}><path d="M17 2v11m0 11h3a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1h-3m0-11-4.4-1.47a3 3 0 0 0-.95-.16H5.5a2 2 0 0 0-2 1.68L2.37 8.85A2 2 0 0 0 4.39 11H10v5a2 2 0 0 0 2 2h.34a1 1 0 0 0 .95-.68L15 11" /></Icon>
+)

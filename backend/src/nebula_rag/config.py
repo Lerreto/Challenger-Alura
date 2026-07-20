@@ -23,12 +23,16 @@ class Settings(BaseSettings):
     collection_name: str = "nebula_documents"
     embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     embedding_device: str = "cpu"
+    enable_reranker: bool = True
+    reranker_model: str = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+    reranker_device: str = "cpu"
     groq_api_key: str | None = Field(default=None, validation_alias="GROQ_API_KEY")
     groq_model: str = "llama-3.1-8b-instant"
     llm_temperature: float = 0.1
     min_relevance: float = 0.36
-    retrieval_candidates: int = 6
+    retrieval_candidates: int = 10
     answer_sources: int = 4
+    auto_sync_interval_seconds: float = 300
     max_upload_bytes: int = 20 * 1024 * 1024
     max_extracted_bytes: int = 4 * 1024 * 1024
     max_archive_members: int = 2_000

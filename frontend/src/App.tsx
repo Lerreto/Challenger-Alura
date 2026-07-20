@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { api, ApiError, type ChatResult, type ChatSession, type DocumentRecord, type Health, type Source } from './api'
+import {
+  api,
+  ApiError,
+  type ChatResult,
+  type ChatSession,
+  type DocumentRecord,
+  type FeedbackRating,
+  type Health,
+  type Source,
+} from './api'
 import {
   ChevronIcon,
   CloseIcon,
@@ -11,6 +20,8 @@ import {
   SendIcon,
   ShieldIcon,
   SparkIcon,
+  ThumbsDownIcon,
+  ThumbsUpIcon,
   TrashIcon,
   UploadIcon,
   WarningIcon,
@@ -26,6 +37,7 @@ type Message = {
   content: string
   status?: ChatResult['status'] | 'error'
   sources?: Source[]
+  feedback?: FeedbackRating
 }
 
 function errorMessage(error: unknown): string {
@@ -70,6 +82,33 @@ function SourceList({ sources }: { sources: Source[] }) {
           <p>{source.excerpt}</p>
         </details>
       ))}
+    </div>
+  )
+}
+
+function FeedbackButtons({
+  given,
+  onRate,
+}: {
+  given?: FeedbackRating
+  onRate: (rating: FeedbackRating) => void
+}) {
+  if (given) {
+    return (
+      <p className="feedback feedback--done">
+        {given === 'helpful' ? '¡Gracias por tu retroalimentación!' : 'Gracias, vamos a revisar esta respuesta.'}
+      </p>
+    )
+  }
+  return (
+    <div className="feedback" role="group" aria-label="¿Te sirvió esta respuesta?">
+      <span>¿Te sirvió esta respuesta?</span>
+      <button className="icon-button" aria-label="Respuesta útil" title="Útil" onClick={() => onRate('helpful')}>
+        <ThumbsUpIcon />
+      </button>
+      <button className="icon-button" aria-label="Respuesta no útil" title="No útil" onClick={() => onRate('not_helpful')}>
+        <ThumbsDownIcon />
+      </button>
     </div>
   )
 }
@@ -486,6 +525,18 @@ export default function App() {
     }
   }
 
+  const submitFeedback = async (messageId: string, rating: FeedbackRating) => {
+    setMessages((current) =>
+      current.map((message) => (message.id === messageId ? { ...message, feedback: rating } : message)),
+    )
+    try {
+      await api.feedback(messageId, rating)
+    } catch {
+      // Best effort: keep the confirmed UI state even if the write failed
+      // silently server-side; nothing actionable for the user to do here.
+    }
+  }
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -542,7 +593,7 @@ export default function App() {
             )}
             <div>
               <h1>Consulta documental</h1>
-              <p><ShieldIcon className="icon" /> Respuestas limitadas a la biblioteca indexada</p>
+              <p><ShieldIcon className="icon" /> Estás hablando con un asistente de IA, no con una persona · Respuestas limitadas a la biblioteca indexada</p>
             </div>
             <div className="chat__controls">
               {sessions.length > 0 && (
@@ -603,9 +654,23 @@ export default function App() {
                   {message.role === 'assistant' ? (message.status === 'error' ? <WarningIcon /> : <SparkIcon />) : 'TÚ'}
                 </div>
                 <div className="message__body">
-                  <p className="message__author">{message.role === 'assistant' ? 'Nébula' : 'Tu pregunta'}</p>
+                  <p className="message__author">
+                    {message.role === 'assistant' ? (
+                      <>
+                        Nébula <span className="ai-badge">IA</span>
+                      </>
+                    ) : (
+                      'Tu pregunta'
+                    )}
+                  </p>
                   <p>{message.content}</p>
                   {message.sources && <SourceList sources={message.sources} />}
+                  {message.role === 'assistant' && message.status !== 'error' && (
+                    <FeedbackButtons
+                      given={message.feedback}
+                      onRate={(rating) => void submitFeedback(message.id, rating)}
+                    />
+                  )}
                 </div>
               </article>
             ))}

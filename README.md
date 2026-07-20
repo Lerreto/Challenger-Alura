@@ -47,6 +47,7 @@ React + Nginx :3000 ── /api ──► FastAPI :8000
 | Ingestion | LangChain splitter + parsers | Extracción, metadatos, chunks y deduplicación |
 | Embeddings | `langchain-huggingface` | `paraphrase-multilingual-MiniLM-L12-v2`, 384 dimensiones |
 | Vector store | `langchain-chroma` | Persistencia y recuperación semántica |
+| Reranking | `sentence-transformers` (cross-encoder) | Segunda pasada de precisión sobre los candidatos recuperados |
 | Generation | `langchain-groq` | Respuesta con contexto; modelo configurable |
 | Catalog | SQLite | Documentos, manifiesto de chunks, puntero Chroma autoritativo, historial de chat y feedback |
 
@@ -70,12 +71,13 @@ Formatos aceptados:
 
 ## Grounding y fuentes
 
-1. Chroma recupera candidatos y scores.
-2. `NEBULA_MIN_RELEVANCE` filtra con un umbral conservador configurable.
-3. Sin candidatos suficientes, el backend devuelve la abstención sin llamar a Groq.
-4. Con evidencia, pregunta, instrucciones y contexto documental no confiable viajan en mensajes separados.
-5. Groq devuelve una respuesta estructurada con los `chunk_id` citados. El backend rechaza citas vacías o ajenas a los fragmentos recuperados.
-6. Solo los chunks citados se transforman en fuentes; título, ubicación, extracto y score salen de metadatos recuperados.
+1. Chroma recupera hasta `NEBULA_RETRIEVAL_CANDIDATES` candidatos (10 por defecto) y sus scores de similitud coseno.
+2. `NEBULA_MIN_RELEVANCE` filtra con un umbral conservador calibrado — esta es la decisión de abstención, y siempre se basa en el score coseno crudo, nunca en el del reranker.
+3. Sin candidatos suficientes, el backend devuelve la abstención sin llamar a Groq ni al reranker.
+4. **Reranking**: con más de un candidato elegible, un cross-encoder (`cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`, multilingüe, CPU) reordena el conjunto ya filtrado evaluando pregunta y fragmento conjuntamente — más lento que la similitud vectorial pero más preciso, y solo corre sobre el puñado de candidatos que ya pasaron el umbral, nunca sobre todo el índice. El score que ve el usuario en cada fuente pasa a ser la confianza del reranker. Si el reranker falla (por ejemplo, sin red la primera vez), la respuesta se degrada al orden por similitud coseno en vez de romper el chat; se puede desactivar con `NEBULA_ENABLE_RERANKER=false`. El modelo se precarga al iniciar el contenedor para que la primera pregunta real no pague ese costo.
+5. Con evidencia, pregunta, instrucciones y contexto documental no confiable viajan en mensajes separados.
+6. Groq devuelve una respuesta estructurada con los `chunk_id` citados. El backend rechaza citas vacías o ajenas a los fragmentos recuperados.
+7. Solo los chunks citados se transforman en fuentes; título, ubicación, extracto y score salen de metadatos recuperados.
 
 El umbral por defecto `0.36` proviene de la calibración documentada más abajo; puede ajustarse con `NEBULA_MIN_RELEVANCE`.
 
@@ -122,6 +124,10 @@ Por eso el default es `NEBULA_MIN_RELEVANCE=0.36`: el valor anterior `0.52` rech
 | `NEBULA_EMBEDDING_MODEL` | multilingual MiniLM | Modelo local para documentos y consultas |
 | `NEBULA_EMBEDDING_DEVICE` | `cpu` | Dispositivo de inferencia; `cuda` si hay GPU dedicada disponible |
 | `NEBULA_MIN_RELEVANCE` | `0.36` | Umbral de evidencia calibrado con `evaluation/retrieval_dataset.json` |
+| `NEBULA_ENABLE_RERANKER` | `true` | Segunda pasada de precisión con cross-encoder tras el filtro de similitud |
+| `NEBULA_RERANKER_MODEL` | `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` | Modelo de reranking multilingüe |
+| `NEBULA_RERANKER_DEVICE` | `cpu` | Dispositivo de inferencia del reranker |
+| `NEBULA_AUTO_SYNC_INTERVAL_SECONDS` | `300` | Frecuencia del pipeline de actualización automática de documentos; `0` lo desactiva |
 | `NEBULA_MAX_UPLOAD_BYTES` | `20971520` | Límite de carga, 20 MB |
 | `FRONTEND_PORT` / `BACKEND_PORT` | `3000` / `8000` | Puertos publicados |
 
@@ -135,6 +141,7 @@ Por eso el default es `NEBULA_MIN_RELEVANCE=0.36`: el valor anterior `0.52` rech
 | POST | `/api/documents` | Carga multipart |
 | DELETE | `/api/documents/{id}` | Elimina original, catálogo y vectores |
 | POST | `/api/documents/reindex` | Reconstruye Chroma desde originales |
+| POST | `/api/documents/sync-seed` | Reconcilia el directorio seed con el catálogo (alta/actualización automática); disparo manual del mismo pipeline que corre en segundo plano |
 | POST | `/api/chat` | Recupera y responde o se abstiene; persiste la conversación por `session_id` |
 | GET | `/api/chat/sessions` | Lista las conversaciones guardadas (título, mensajes, fechas) |
 | GET | `/api/chat/history/{session_id}` | Devuelve la conversación persistida |
@@ -151,7 +158,22 @@ Cada mensaje se clasifica antes de llegar al RAG:
 
 El frontend muestra un selector de conversaciones guardadas: podés retomar cualquiera, empezar una nueva sin perder las anteriores, o eliminar la actual de forma explícita.
 
-Las preguntas de seguimiento («dame la información dentro de ese .md», «¿y eso qué cubre?») no se resuelven en el vacío: si el turno anterior fue una respuesta real con fuentes, su pregunta y respuesta se pliegan en la consulta de recuperación y se le pasan al LLM como contexto no citable, solo para interpretar la referencia. Respuestas de charla trivial o abstenciones nunca contaminan este contexto.
+Las preguntas de seguimiento («dame la información dentro de ese .md», «¿y eso qué cubre?») no se resuelven en el vacío: si el turno anterior fue una respuesta real con fuentes, su pregunta y respuesta se pliegan en la **consulta de recuperación**, así que la búsqueda encuentra el documento correcto aunque la pregunta nueva no repita el tema. Respuestas de charla trivial o abstenciones nunca contaminan esta señal.
+
+El turno anterior **nunca se le muestra al LLM durante la generación**, solo se usa para mejorar la búsqueda. Se probó pasárselo como contexto adicional marcado explícitamente "no es evidencia, no cites nada de aquí", pero el modelo pequeño de Groq (`llama-3.1-8b-instant`) igual repetía datos de ahí en la respuesta nueva pese a la instrucción — por ejemplo, ante «dámelo en orden, del 1 al 9» con evidencia real solo para 3 puntos, completaba los faltantes citando texto del turno anterior y hasta inventaba marcadores «(no disponible)» para los que no tenía. Reproducido de forma determinística (6/6) y corregido eliminando la exposición del turno previo al paso de generación: la recuperación ya deja la evidencia anclada al documento correcto, así que el LLM no necesita ver la conversación para responder bien, y sin ese contexto no tiene de dónde fabricar.
+
+## Interfaz y mantenimiento
+
+- **Aviso de IA**: el encabezado del chat indica explícitamente que se conversa con un asistente de IA, no con una persona; cada respuesta del asistente lleva además una etiqueta «IA» junto al nombre.
+- **Fuentes visibles**: cada respuesta muestra los documentos y ubicaciones usados, con score de relevancia.
+- **Feedback**: cada respuesta del asistente tiene botones de útil / no útil, persistidos vía `POST /api/feedback` en la tabla `feedback` de SQLite.
+- **Historial de conversación**: persistente por sesión, con selector para retomar conversaciones guardadas (ver sección anterior).
+- **Pipeline de actualización de documentos**: una tarea en segundo plano ejecuta `sync_seed_directory` cada `NEBULA_AUTO_SYNC_INTERVAL_SECONDS` (5 min por defecto; configurable a diario/semanal en producción). Reconcilia el directorio seed montado con el catálogo:
+  - archivo nuevo → se indexa automáticamente;
+  - archivo existente con contenido distinto (mismo nombre, otro SHA-256) → se reemplaza; la versión nueva se valida y confirma **antes** de retirar la anterior, así que un archivo corrupto nunca destruye una versión que ya funcionaba;
+  - archivo sin cambios → se ignora;
+  - archivo eliminado del directorio seed → **no** se borra automáticamente del catálogo; el borrado sigue siendo una acción explícita y auditable vía `DELETE /api/documents/{id}`.
+  - `POST /api/documents/sync-seed` dispara el mismo pipeline bajo demanda — útil para un cron externo (por ejemplo, un scheduled job de OCI) si se prefiere desactivar la tarea interna con `NEBULA_AUTO_SYNC_INTERVAL_SECONDS=0`.
 
 ## Desarrollo y pruebas
 
@@ -175,13 +197,14 @@ Las pruebas automatizadas usan índices y LLM falsos: no necesitan clave, llamad
 
 ## Estado del challenge
 
-Implementado y validado con 68 pruebas backend (Python 3.12, el mismo del Dockerfile), 11 pruebas frontend, build de Vite, imágenes Docker construidas y una validación end-to-end local con el embedding real: corpus, ingesta, índice persistente versionado, recuperación calibrada, abstención, ChatGroq estructurado, carga y eliminación de documentos, historial de chat persistente, API e interfaz. `torch` se instala desde el índice CPU de PyTorch para que la imagen no arrastre CUDA. No se afirma una prueba end-to-end con Groq sin una clave real.
+Implementado y validado con 122 pruebas backend (Python 3.12, el mismo del Dockerfile), 15 pruebas frontend, build de Vite, imágenes Docker construidas y una validación end-to-end en vivo con embedding real, reranker real y **Groq real** (con `GROQ_API_KEY` configurada): corpus, ingesta, índice persistente versionado, recuperación calibrada con reranking, abstención, ChatGroq estructurado, carga y eliminación de documentos, historial de chat persistente con selector de sesiones, feedback, pipeline de actualización automática, y aviso de IA en la interfaz. `torch` se instala desde el índice CPU de PyTorch para que la imagen no arrastre CUDA.
+
+Limitación conocida: preguntas formuladas como «¿cuál es la política de X?» (en vez de una pregunta puntual sobre su contenido) a veces reciben una abstención del modelo pequeño de Groq (`llama-3.1-8b-instant`) pese a que la recuperación sí encuentra evidencia fuerte — el modelo se niega a citar cuando interpreta la pregunta como pedir una definición genérica en lugar de un resumen del documento. No es un problema de recuperación; ajustar esto necesitaría más iteración de prompt o un modelo Groq más grande (`llama-3.3-70b-versatile`).
 
 Pendiente antes de entregar:
 
 - desplegar al menos un servicio en Oracle Cloud Infrastructure;
 - registrar evidencia visual o video de la aplicación ejecutándose en OCI;
-- probar el flujo `answered` completo con una `GROQ_API_KEY` real;
 - añadir autenticación y análisis antimalware antes de aceptar archivos en un entorno público.
 
 El contexto de producto está en [`PRODUCT.md`](PRODUCT.md), el sistema visual en [`DESIGN.md`](DESIGN.md) y el plan técnico en [`Docs/plan/README.md`](Docs/plan/README.md).

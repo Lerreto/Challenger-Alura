@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -30,6 +31,10 @@ def make_app(tmp_path: Path, *, configured: bool = True, fresh_dirs: bool = True
         seed_dir=tmp_path / "seed",
         max_upload_bytes=2048,
         min_relevance=0.5,
+        # Tests drive sync explicitly (endpoint or a standalone task); the
+        # app's own background loop would otherwise spin up 300s-interval
+        # tasks in every single test for no reason.
+        auto_sync_interval_seconds=0,
     )
     if fresh_dirs:
         settings.seed_dir.mkdir(parents=True)
@@ -79,6 +84,55 @@ def test_document_and_feedback_api_contracts(tmp_path: Path) -> None:
             json={"message_id": "m-1", "rating": "helpful", "comment": "claro"},
         ).status_code == 201
         assert client.delete(f"/api/documents/{body['id']}").status_code == 204
+
+
+def test_sync_seed_endpoint_picks_up_a_new_file_without_a_manual_reindex(
+    tmp_path: Path,
+) -> None:
+    app, _ = make_app(tmp_path)
+    with TestClient(app) as client:
+        seed_file = app.state.container.settings.seed_dir / "nuevo.md"
+        seed_file.write_text("# Nuevo\nContenido para sincronizar.", encoding="utf-8")
+
+        response = client.post("/api/documents/sync-seed")
+        assert response.status_code == 200
+        assert response.json() == {
+            "created": 1,
+            "updated": 0,
+            "unchanged": 0,
+            "failed": 0,
+        }
+
+        listed = client.get("/api/documents").json()
+        assert any(item["original_filename"] == "nuevo.md" for item in listed)
+
+        # A second sync with nothing new must be a no-op.
+        again = client.post("/api/documents/sync-seed")
+        assert again.json() == {"created": 0, "updated": 0, "unchanged": 1, "failed": 0}
+
+
+def test_auto_sync_loop_keeps_ticking_after_a_failed_tick(tmp_path: Path) -> None:
+    app, _ = make_app(tmp_path)
+    container = app.state.container
+    calls: list[int] = []
+
+    def flaky_sync() -> dict[str, int]:
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("transient failure")
+        return {"created": 0, "updated": 0, "unchanged": 0, "failed": 0}
+
+    container.ingestion.sync_seed_directory = flaky_sync
+
+    async def scenario() -> None:
+        task = asyncio.create_task(api_module._auto_sync_loop(container, 0.01))
+        await asyncio.sleep(0.15)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    asyncio.run(scenario())
+    assert len(calls) >= 2
 
 
 def test_chat_contract_fallback_answer_and_controlled_503(tmp_path: Path) -> None:
@@ -306,9 +360,10 @@ def test_followup_question_folds_the_previous_grounded_answer_into_retrieval(
             "/api/chat",
             json={"question": "dame la informacion dentro de ese .md", "session_id": session_id},
         )
+        # Retrieval is anchored on the prior turn (finds the right document)...
         assert "dame los terminos y condiciones" in vector.last_query
-        assert llm.last_recent_exchange is not None
-        assert llm.last_recent_exchange[0] == "dame los terminos y condiciones"
+        # ...but the LLM never sees that prior turn, only the fresh evidence.
+        assert "dame los terminos y condiciones" not in llm.last_context
 
 
 def test_followup_after_smalltalk_does_not_pollute_retrieval(tmp_path: Path) -> None:

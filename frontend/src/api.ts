@@ -63,6 +63,8 @@ export type ChatSession = {
   updated_at: string
 }
 
+export type FeedbackRating = 'helpful' | 'not_helpful'
+
 export class ApiError extends Error {
   code: string
   status: number
@@ -141,4 +143,10 @@ export const api = {
     request<ChatHistory>(`/api/chat/history/${encodeURIComponent(sessionId)}`),
   clearChatHistory: (sessionId: string) =>
     request<void>(`/api/chat/history/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
+  feedback: (messageId: string, rating: FeedbackRating) =>
+    request<{ status: string }>('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message_id: messageId, rating }),
+    }),
 }

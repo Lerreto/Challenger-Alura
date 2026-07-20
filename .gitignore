@@ -5,6 +5,7 @@
 !.env.example
 .codex
 .agents
+.claude
 
 # Local agent instructions
 AGENTS.md

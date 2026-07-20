@@ -73,27 +73,33 @@ class FakeVectorIndex:
 
 
 @dataclass
+class FakeReranker:
+    calls: int = 0
+    last_query: str = ""
+
+    def rerank(self, query: str, candidates: list[RetrievedChunk]) -> list[RetrievedChunk]:
+        self.calls += 1
+        self.last_query = query
+        # Deterministic reordering distinct from vector-score order, so tests
+        # can tell whether the reranked order was actually used downstream.
+        return list(reversed(candidates))
+
+
+@dataclass
 class FakeLLM:
     configured: bool = True
     answer: str = "Respuesta basada en los documentos."
     calls: int = 0
     last_context: str = ""
-    last_recent_exchange: tuple[str, str] | None = None
     cited_chunk_ids: list[str] = field(default_factory=lambda: ["chunk-1"])
     error: Exception | None = None
 
     def is_configured(self) -> bool:
         return self.configured
 
-    def generate(
-        self,
-        question: str,
-        context: str,
-        recent_exchange: tuple[str, str] | None = None,
-    ) -> GeneratedAnswer:
+    def generate(self, question: str, context: str) -> GeneratedAnswer:
         self.calls += 1
         self.last_context = context
-        self.last_recent_exchange = recent_exchange
         if self.error:
             raise self.error
         return GeneratedAnswer(self.answer, self.cited_chunk_ids)

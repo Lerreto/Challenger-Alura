@@ -212,9 +212,15 @@ summary:focus-visible {
 .message--assistant[data-status="error"] .message__avatar { color: oklch(0.9 0.08 25); background: oklch(0.24 0.06 25); }
 .message__body { flex: 1; min-width: 0; padding-top: 2px; }
 .message__body > p:last-of-type { margin: 5px 0 0; max-width: 70ch; color: var(--text); font-size: 0.84rem; line-height: 1.65; white-space: pre-wrap; }
-.message__author { margin: 0; color: var(--text-muted); font-size: 0.69rem; font-weight: 600; }
+.message__author { margin: 0; display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 0.69rem; font-weight: 600; }
+.ai-badge { padding: 1px 6px; border-radius: 999px; background: var(--surface-3); color: var(--text-soft); font-size: 0.6rem; font-weight: 700; letter-spacing: 0.04em; }
 .message--assistant[data-status="insufficient_context"] .message__body { padding: 12px; border: 1px solid oklch(0.37 0.04 78); border-radius: 10px; background: oklch(0.17 0.018 78); }
 .message--assistant[data-status="error"] .message__body { padding: 12px; border: 1px solid oklch(0.34 0.05 25); border-radius: 10px; background: oklch(0.17 0.02 25); }
+
+.feedback { margin-top: 10px; display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 0.69rem; }
+.feedback .icon-button { width: 26px; height: 26px; }
+.feedback .icon-button svg { width: 13px; height: 13px; }
+.feedback--done { color: var(--text-soft); }
 
 .sources { margin-top: 16px; max-width: 680px; }
 .sources__label { margin: 0 0 7px !important; color: var(--text-muted) !important; font-size: 0.69rem !important; text-transform: none; }

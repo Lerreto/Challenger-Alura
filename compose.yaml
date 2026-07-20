@@ -14,6 +14,13 @@ services:
       NEBULA_EMBEDDING_MODEL: ${NEBULA_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
       NEBULA_EMBEDDING_DEVICE: ${NEBULA_EMBEDDING_DEVICE:-cpu}
       NEBULA_MIN_RELEVANCE: ${NEBULA_MIN_RELEVANCE:-0.36}
+      NEBULA_ENABLE_RERANKER: ${NEBULA_ENABLE_RERANKER:-true}
+      NEBULA_RERANKER_MODEL: ${NEBULA_RERANKER_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}
+      NEBULA_RERANKER_DEVICE: ${NEBULA_RERANKER_DEVICE:-cpu}
+      # Seconds between automatic seed-directory syncs (new/changed files
+      # picked up without a manual reindex). 300 = 5 min for local demos;
+      # set to 86400 (daily) or 0 (disabled) for production.
+      NEBULA_AUTO_SYNC_INTERVAL_SECONDS: ${NEBULA_AUTO_SYNC_INTERVAL_SECONDS:-300}
       NEBULA_MAX_UPLOAD_BYTES: ${NEBULA_MAX_UPLOAD_BYTES:-20971520}
       HF_HOME: /home/app/.cache/huggingface
     ports:

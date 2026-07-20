@@ -83,6 +83,7 @@ function mockApi(options?: {
       )
     }
     if (url.endsWith('/reindex')) return response({ documents: 1 })
+    if (url.endsWith('/api/feedback')) return response({ status: 'recorded' }, 201)
     if (url.includes('/api/documents/')) return response(null, 204)
     return response({})
   })
@@ -173,6 +174,38 @@ describe('Nébula RAG workspace', () => {
     const sources = screen.getByLabelText('Fuentes verificadas')
     await user.click(within(sources).getByText('Política de reembolsos'))
     expect(screen.getByText('Dentro de 10 días hábiles.')).toBeInTheDocument()
+  })
+
+  it('discloses that the assistant is an AI before any message is sent', async () => {
+    mockApi()
+    render(<App />)
+    expect(
+      await screen.findByText(/Estás hablando con un asistente de IA, no con una persona/),
+    ).toBeInTheDocument()
+  })
+
+  it('lets the user rate an answer as helpful and persists the choice via the API', async () => {
+    const api = mockApi()
+    const user = userEvent.setup()
+    render(<App />)
+    await user.type(screen.getByLabelText('Escribí tu pregunta'), '¿Cuánto tarda un reembolso?')
+    await user.click(screen.getByRole('button', { name: 'Enviar pregunta' }))
+    expect(await screen.findByText('El reembolso tarda hasta 10 días hábiles.')).toBeInTheDocument()
+
+    expect(screen.getByText('¿Te sirvió esta respuesta?')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Respuesta útil' }))
+
+    expect(await screen.findByText('¡Gracias por tu retroalimentación!')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Respuesta útil' })).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(
+        api.mock.calls.some(([url, init]) => {
+          if (!String(url).endsWith('/api/feedback') || init?.method !== 'POST') return false
+          const body = JSON.parse(String(init.body))
+          return body.message_id === 'msg-1' && body.rating === 'helpful'
+        }),
+      ).toBe(true)
+    })
   })
 
   it('distinguishes deterministic fallback from errors', async () => {
